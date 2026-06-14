@@ -1,0 +1,170 @@
+
+Source   : learning/queues/pinch_success_verify.yaml
+Runs     : 1 total, 1 will execute
+
+  [00]        env=TesolloCubePinch  suffix=verify_base_clean  seed=-
+            overrides={
+              obs_noise.level: 0.0,
+              sensor_bundle: baseline,
+            }
+
+Queue log dir: logs/_queue/pinch_success_verify-20260614-101932
+
+
+======================================================================
+[00] run-00-TesolloCubePinch-verify_base_clean
+     log     : logs/_queue/pinch_success_verify-20260614-101932/run-00-TesolloCubePinch-verify_base_clean.log
+     overrides: logs/_queue/pinch_success_verify-20260614-101932/run-00-TesolloCubePinch-verify_base_clean-overrides.yaml
+     command  : /local/home/nstaykov/workspace/mujoco_playground/.venv/bin/python -u learning/train_jax_ppo.py --env_name=TesolloCubePinch --log_training_metrics --training_metrics_steps=10000000 --num_timesteps=150000000 --use_wandb --log_video_to_wandb --suffix=verify_base_clean --env_overrides_file=logs/_queue/pinch_success_verify-20260614-101932/run-00-TesolloCubePinch-verify_base_clean-overrides.yaml
+======================================================================
+
+Warp 1.12.1 initialized:
+   CUDA Toolkit 12.9, Driver 12.5
+   Devices:
+     "cpu"      : "x86_64"
+     "cuda:0"   : "NVIDIA GeForce RTX 4090" (24 GiB, sm_89, mempool enabled)
+     "cuda:1"   : "NVIDIA GeForce RTX 4090" (24 GiB, sm_89, mempool enabled)
+   CUDA peer access:
+     Not supported
+   Kernel cache:
+     /local/home/nstaykov/.cache/warp/1.12.1
+Warp DeprecationWarning: The symbol `warp.types.warp_type_to_np_dtype` will soon be removed from the public API. It can still be accessed from `warp._src.types.warp_type_to_np_dtype` but might be changed or removed without notice.
+/local/home/nstaykov/workspace/mujoco_playground/mujoco_playground/_src/manipulation/tesollo_hand/obs.py:158: UserWarning: obs_noise.scales has keys not in active obs spec: {'fingertip_force_dirs', 'motor_targets', 'fingertip_forces'}
+  warnings.warn(
+Environment Config:
+action_repeat: 1
+action_scale: 0.5
+ctrl_dt: 0.05
+ema_alpha: 1.0
+episode_length: 80
+force_target_range:
+- 2.0
+- 5.0
+force_tolerance: 0.75
+impl: warp
+nconmax: 1638400
+njmax: 1024
+obs_noise:
+  bias_scales:
+    fingertip_force_dirs: 0.0
+    fingertip_forces: 0.0
+    joint_pos: 0.0
+    joint_vel: 0.0
+    motor_targets: 0.0
+  level: 0.0
+  scales:
+    fingertip_force_dirs: 0.0
+    fingertip_forces: 0.0
+    joint_pos: 0.001
+    joint_vel: 0.01
+    motor_targets: 0.0
+pert_config:
+  angular_velocity_pert:
+  - 0.0
+  - 0.5
+  enable: false
+  linear_velocity_pert:
+  - 0.0
+  - 3.0
+  pert_duration_steps:
+  - 1
+  - 100
+  pert_wait_steps:
+  - 60
+  - 150
+pid_gains:
+  enable: false
+  finger_kp: 3.0
+  finger_kv: 0.0
+  kp_per_actuator: []
+  kv_per_actuator: []
+reward_config:
+  scales:
+    action_rate: -0.005
+    cube_force: 5.0
+    fingertip_pos_per_tip: 2.0
+    joint_vel: -0.01
+  success_reward: 10.0
+sensor_bundle: baseline
+sim_dt: 0.01
+success_hold_time: 0.5
+tip_solimp:
+  enable: false
+  width: 0.0001
+use_ctrl_delta: false
+
+PPO Training Parameters:
+action_repeat: 1
+batch_size: 256
+discounting: 0.995
+entropy_cost: 0.01
+episode_length: 80
+learning_rate: 0.0001
+log_training_metrics: true
+max_grad_norm: 1.0
+network_factory:
+  policy_hidden_layer_sizes: &id001 !!python/tuple
+  - 256
+  - 128
+  - 64
+  policy_obs_key: state
+  value_hidden_layer_sizes: *id001
+  value_obs_key: privileged_state
+normalize_observations: true
+num_envs: 8192
+num_evals: 10
+num_minibatches: 64
+num_resets_per_eval: 1
+num_timesteps: 150000000
+num_updates_per_batch: 4
+reward_scaling: 1.0
+training_metrics_steps: 10000000
+unroll_length: 40
+
+CLI overrides: {
+  "env_name": "TesolloCubePinch",
+  "suffix": "verify_base_clean",
+  "use_wandb": true,
+  "log_video_to_wandb": true,
+  "num_timesteps": 150000000,
+  "log_training_metrics": true,
+  "training_metrics_steps": 10000000,
+  "env_overrides_file": "logs/_queue/pinch_success_verify-20260614-101932/run-00-TesolloCubePinch-verify_base_clean-overrides.yaml"
+}
+Experiment name: TesolloCubePinch-20260614-101939-verify_base_clean
+Logs are being stored in: /local/home/nstaykov/workspace/mujoco_playground/logs/TesolloCubePinch-20260614-101939-verify_base_clean
+Traceback (most recent call last):
+  File "/local/home/nstaykov/workspace/mujoco_playground/learning/train_jax_ppo.py", line 758, in <module>
+    app.run(main)
+  File "/local/home/nstaykov/workspace/mujoco_playground/.venv/lib/python3.11/site-packages/absl/app.py", line 367, in run
+    _run_main(main, args)
+  File "/local/home/nstaykov/workspace/mujoco_playground/.venv/lib/python3.11/site-packages/absl/app.py", line 312, in _run_main
+    sys.exit(main(argv))
+             ^^^^^^^^^^
+  File "/local/home/nstaykov/workspace/mujoco_playground/learning/train_jax_ppo.py", line 488, in main
+    wandb.init(project="mjxrl", name=exp_name)
+  File "/local/home/nstaykov/workspace/mujoco_playground/.venv/lib/python3.11/site-packages/wandb/sdk/wandb_init.py", line 1603, in init
+    get_sentry().reraise(e)
+  File "/local/home/nstaykov/workspace/mujoco_playground/.venv/lib/python3.11/site-packages/wandb/analytics/sentry.py", line 190, in reraise
+    raise exc.with_traceback(tb)
+  File "/local/home/nstaykov/workspace/mujoco_playground/.venv/lib/python3.11/site-packages/wandb/sdk/wandb_init.py", line 1524, in init
+    wi.maybe_login(init_settings)
+  File "/local/home/nstaykov/workspace/mujoco_playground/.venv/lib/python3.11/site-packages/wandb/sdk/wandb_init.py", line 200, in maybe_login
+    wandb_login._login(
+  File "/local/home/nstaykov/workspace/mujoco_playground/.venv/lib/python3.11/site-packages/wandb/sdk/wandb_login.py", line 190, in _login
+    auth = _find_or_prompt_for_key(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/local/home/nstaykov/workspace/mujoco_playground/.venv/lib/python3.11/site-packages/wandb/sdk/wandb_login.py", line 266, in _find_or_prompt_for_key
+    auth = wbauth.authenticate_session(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/local/home/nstaykov/workspace/mujoco_playground/.venv/lib/python3.11/site-packages/wandb/sdk/lib/wbauth/authenticate.py", line 139, in authenticate_session
+    raise UsageError(
+wandb.errors.errors.UsageError: No API key configured. Use `wandb login` to log in.
+
+[00] FAILED (exit 1)
+
+======================================================================
+Result   : 0/1 passed
+Failed   :
+  [00] TesolloCubePinch  suffix=verify_base_clean  →  logs/_queue/pinch_success_verify-20260614-101932/run-00-TesolloCubePinch-verify_base_clean.log
+Status   : logs/_queue/pinch_success_verify-20260614-101932/status.json
