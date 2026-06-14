@@ -121,26 +121,21 @@ def _exec_detached(name: str, inner_cmd: str):
         raise RuntimeError(f"docker exec failed: {res.stderr.strip() or res.stdout.strip()}")
 
 
-# Optional env file on the (mounted) playground root, sourced before every
-# launch so credentials/config (e.g. WANDB_API_KEY) apply to all containers and
-# survive container recreation. Simple `KEY=value` shell syntax, resolved
-# relative to PLAYGROUND_ROOT.
-ENV_FILE = ".cockpit.env"
-
-
 def run_queue_in(name: str, gpu: int, run_queue_args: str, label: str) -> dict:
     """Start run_queue.py inside `name`, output to a shared-mount log.
 
-    Before exec'ing, source PLAYGROUND_ROOT/.cockpit.env if it exists (e.g. for
+    Before exec'ing, source config.LAUNCH_ENV_FILE if it exists (e.g. for
     WANDB_API_KEY) so launches are authenticated without baking secrets into the
-    image or the cockpit.
+    image or the cockpit. It lives on the bind-mounted workspace, so the same
+    absolute path resolves inside the container.
     """
     LAUNCH_LOG_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_path = LAUNCH_LOG_DIR / f"{label}-{ts}-gpu{gpu}.log"
+    envf = config.LAUNCH_ENV_FILE
     inner = (
         f"cd {config.PLAYGROUND_ROOT} && exec > {log_path} 2>&1 && "
-        f"{{ [ -f {ENV_FILE} ] && set -a && . ./{ENV_FILE} && set +a; }}; "
+        f"{{ [ -f {envf} ] && set -a && . {envf} && set +a; }}; "
         f"exec ./.venv/bin/python -u learning/run_queue.py {run_queue_args}"
     )
     _exec_detached(name, inner)

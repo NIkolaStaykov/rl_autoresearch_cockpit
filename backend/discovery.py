@@ -19,7 +19,7 @@ from typing import Any, Optional
 
 import yaml
 
-from . import config, hypothesis, metrics, metrics_config, notes, playground, settings
+from . import config, contrasts, hypothesis, metrics, metrics_config, notes, playground, settings
 
 _TS_RE = re.compile(r"-(\d{8})-(\d{6})$")
 
@@ -306,6 +306,7 @@ def queue_detail(name: str, with_metrics: bool = True) -> Optional[dict]:
         "axes": axes,
         "hypothesis": hyp,
         "verdict": hypothesis.evaluate(hyp, runs),
+        "contrasts": contrasts.evaluate((raw or {}).get("contrasts"), runs),
         "success_metric": {"id": success_id, "label": sm["label"], "kind": sm["kind"]},
         "doc": _doc_comment(stem),
         "conclusion": notes.read(name),

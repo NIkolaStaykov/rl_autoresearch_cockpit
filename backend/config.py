@@ -28,3 +28,11 @@ CLAUDE_DIR = PLAYGROUND_ROOT / ".claude"
 # Cockpit-owned, human-authored notes (the only thing we persist).
 COCKPIT_HOME = pathlib.Path(__file__).resolve().parent.parent
 NOTES_DIR = COCKPIT_HOME / "notes"
+
+# Optional env file sourced inside the container before each launch (e.g. for
+# WANDB_API_KEY). Defaults to the bind-mount root (the workspace dir above the
+# repo), so it needs no gitignoring and resolves to the same path in both
+# containers. Override with COCKPIT_LAUNCH_ENV.
+LAUNCH_ENV_FILE = pathlib.Path(
+    os.environ.get("COCKPIT_LAUNCH_ENV", str(PLAYGROUND_ROOT.parent / ".cockpit.env"))
+).expanduser()

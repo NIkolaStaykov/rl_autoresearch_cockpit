@@ -150,6 +150,10 @@ table.matrix tr.run-row:hover td { background: var(--bg-1); }
 table.matrix td.num { font-family: var(--mono); text-align: right; }
 table.matrix td.idx { font-family: var(--mono); color: var(--txt-faint); }
 .th-flavor { color: var(--accent); font-weight: 600; }
+table.matrix thead th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+table.matrix thead th.sortable:hover { color: var(--txt); }
+table.matrix thead th.sorted { color: var(--accent); }
+.sort-ind { font-size: 9px; }
 .cell-param { font-family: var(--mono); color: var(--txt); }
 .bar-cell { display: flex; align-items: center; gap: 8px; }
 .bar-cell .bar { height: 6px; border-radius: 3px; background: var(--accent); min-width: 2px; }

@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, control, discovery, metrics, metrics_config, notes, settings
+from . import claims, config, control, discovery, metrics, metrics_config, notes, settings
 
 app = FastAPI(title="Experiment Cockpit")
 
@@ -107,6 +107,12 @@ def put_settings(body: SettingsBody):
 @app.get("/api/queue_specs")
 def queue_specs():
     return discovery.list_queue_specs()
+
+
+@app.get("/api/claims")
+def list_claims():
+    """Cross-queue claims, graded live from learning/claims/*.yaml."""
+    return claims.list_claims()
 
 
 @app.get("/api/control/status")

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api'
 import { fmtNum, fmtByKind, fmtDuration, fmtSteps, axisLabel } from '../format'
 import { StatusPill, Loading, ErrorBox, navigate } from './Common'
@@ -56,30 +56,94 @@ function RewardCell({ value, max }) {
   )
 }
 
+// Sort ordering for non-numeric columns. Lower rank sorts first when ascending.
+const STATUS_RANK = { running: 0, done: 1, failed: 2, pending: 3 }
+const DIV_RANK = { ok: 0, warn: 1, diverged: 2 }
+// Columns where a first click should sort high-to-low (you usually want the best first).
+const DESC_FIRST = new Set(['reward', 'success', 'health', 'steps', 'wall'])
+
+// nulls/undefined always sort last (both directions); ties break by run idx for stability.
+function sortRuns(runs, get, dir) {
+  const mult = dir === 'asc' ? 1 : -1
+  return [...runs].sort((ra, rb) => {
+    const a = get(ra), b = get(rb)
+    const an = a === null || a === undefined
+    const bn = b === null || b === undefined
+    if (an && bn) return ra.idx - rb.idx
+    if (an) return 1
+    if (bn) return -1
+    let c
+    if (typeof a === 'number' && typeof b === 'number') c = a - b
+    else c = String(a).localeCompare(String(b), undefined, { numeric: true })
+    return c !== 0 ? c * mult : ra.idx - rb.idx
+  })
+}
+
+function SortTh({ id, sort, onSort, children, ...rest }) {
+  const active = sort.key === id
+  return (
+    <th {...rest} className={`sortable${active ? ' sorted' : ''}`} onClick={() => onSort(id)}>
+      {children}
+      <span className="sort-ind">{active ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}</span>
+    </th>
+  )
+}
+
 function Matrix({ d, flavor }) {
-  const axes = d.axes || []
+  const axes = useMemo(() => d.axes || [], [d.axes])
   const sm = d.success_metric || { label: 'success', kind: 'pct' }
   const rewardOf = (r) => r.reward?.[flavor]
   const successOf = (r) => r.success?.[flavor]
   const maxReward = Math.max(0, ...d.runs.map((r) => rewardOf(r) || 0))
+
+  const [sort, setSort] = useState({ key: 'idx', dir: 'asc' })
+  const onSort = useCallback((key) => {
+    setSort((s) => s.key === key
+      ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+      : { key, dir: DESC_FIRST.has(key) ? 'desc' : 'asc' })
+  }, [])
+
+  // Accessor per sortable column; rebuilt when axes/flavor change.
+  const accessors = useMemo(() => {
+    const m = {
+      idx: (r) => r.idx,
+      status: (r) => STATUS_RANK[r.status] ?? 9,
+      suffix: (r) => r.suffix,
+      reward: (r) => r.reward?.[flavor],
+      success: (r) => r.success?.[flavor],
+      health: (r) => DIV_RANK[r.divergence?.flag] ?? null,
+      steps: (r) => r.final_step,
+      wall: (r) => r.duration_s,
+    }
+    for (const a of axes) m[`p:${a}`] = (r) => r.params?.[a]
+    return m
+  }, [axes, flavor])
+
+  const rows = useMemo(
+    () => sortRuns(d.runs, accessors[sort.key] || accessors.idx, sort.dir),
+    [d.runs, accessors, sort],
+  )
+
   return (
     <div className="matrix-wrap">
       <table className="matrix">
         <thead>
           <tr>
-            <th>#</th>
-            <th>status</th>
-            {axes.map((a) => <th key={a}>{axisLabel(a)}</th>)}
-            {axes.length === 0 && <th>suffix</th>}
-            <th>reward<span className="th-flavor"> {flavor}</span></th>
-            <th title={`success metric: ${sm.id || sm.label} (${flavor})`}>{sm.label}<span className="th-flavor"> {flavor}</span></th>
-            <th>health</th>
-            <th>steps</th>
-            <th>wall</th>
+            <SortTh id="idx" sort={sort} onSort={onSort}>#</SortTh>
+            <SortTh id="status" sort={sort} onSort={onSort}>status</SortTh>
+            {axes.map((a) => (
+              <SortTh key={a} id={`p:${a}`} sort={sort} onSort={onSort}>{axisLabel(a)}</SortTh>
+            ))}
+            {axes.length === 0 && <SortTh id="suffix" sort={sort} onSort={onSort}>suffix</SortTh>}
+            <SortTh id="reward" sort={sort} onSort={onSort}>reward<span className="th-flavor"> {flavor}</span></SortTh>
+            <SortTh id="success" sort={sort} onSort={onSort} title={`success metric: ${sm.id || sm.label} (${flavor})`}>{sm.label}<span className="th-flavor"> {flavor}</span></SortTh>
+            <SortTh id="health" sort={sort} onSort={onSort}>health</SortTh>
+            <SortTh id="steps" sort={sort} onSort={onSort}>steps</SortTh>
+            <SortTh id="wall" sort={sort} onSort={onSort}>wall</SortTh>
           </tr>
         </thead>
         <tbody>
-          {d.runs.map((r) => (
+          {rows.map((r) => (
             <tr
               key={r.idx}
               className="run-row"

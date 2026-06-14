@@ -72,12 +72,12 @@ run.sh           build + serve on one port
   none is free. Stop sends **SIGINT** to `run_queue.py` inside the chosen container so
   it kills its training child and writes `status.json`.
 
-  **Credentials / launch env:** before exec'ing, each launch sources
-  `$PLAYGROUND_ROOT/.cockpit.env` (if present) with `set -a`, so `KEY=value` lines
-  there (e.g. `WANDB_API_KEY=…`) are exported into the training process. The file
-  lives on the bind-mounted workspace, so it applies to both containers and
-  survives container recreation — keep it gitignored, out of the image and out of
-  the cockpit.
+  **Credentials / launch env:** before exec'ing, each launch sources the file at
+  `LAUNCH_ENV_FILE` (if present) with `set -a`, so `KEY=value` lines there (e.g.
+  `WANDB_API_KEY=…`) are exported into the training process. Default location is
+  `<workspace>/.cockpit.env` — the bind-mount root *above* the repo, so it needs
+  no gitignoring, applies to both containers, and survives container recreation.
+  Override with the `COCKPIT_LAUNCH_ENV` env var.
 
 ### Control endpoints
 
