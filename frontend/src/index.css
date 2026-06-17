@@ -248,6 +248,15 @@ input.txt, input.num { background: var(--bg); color: var(--txt); border: 1px sol
   font-family: var(--mono); font-size: 12px; padding: 6px 9px; }
 input.num { width: 90px; }
 
+/* board search */
+.board-search { display: flex; align-items: center; gap: 10px; margin: 18px 0 4px; }
+.search-input { flex: 1; max-width: 460px; }
+.search-count { font-family: var(--mono); font-size: 11px; color: var(--txt-faint); }
+
+/* subtle fallback link to the queue orchestrator log */
+.queue-log-link { color: var(--txt-faint); text-decoration: none; border-bottom: 1px dotted var(--line-2); }
+.queue-log-link:hover { color: var(--txt); }
+
 /* conclusion + actions panels in queue detail */
 .action-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 textarea.note { width: 100%; min-height: 90px; background: var(--bg); color: var(--txt); border: 1px solid var(--line-2);

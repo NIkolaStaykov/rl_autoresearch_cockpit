@@ -24,7 +24,27 @@ from . import config
 # multiple GB; the idle 4090s sit at ~13 MiB, so the gap is wide.
 FREE_MEM_MIB = 2000
 
+# VRAM-based num_envs sizing. 18 GiB free is enough for the full 8192-env config;
+# below that, halve num_envs (8192 -> 4096 -> 2048 ...) down to the largest
+# power of two that fits, keeping it divisible by typical minibatch counts. A GPU
+# with too little free VRAM for MIN_ENVS is not eligible to receive a queue.
+VRAM_FOR_MAX_ENVS_MIB = 18 * 1024
+MAX_ENVS = 8192
+MIN_ENVS = 512
+
 LAUNCH_LOG_DIR = config.COCKPIT_HOME / "state" / "launch_logs"
+
+
+def envs_for_free_vram(free_mib: int | None) -> int | None:
+    """Largest power-of-two num_envs that fits in `free_mib` of VRAM. VRAM scales
+    linearly with envs (18 GiB -> MAX_ENVS), so we take that estimate and floor it
+    to a power of two (halving). None if it can't fit MIN_ENVS."""
+    if not free_mib:
+        return None
+    capped = min(int(MAX_ENVS * free_mib / VRAM_FOR_MAX_ENVS_MIB), MAX_ENVS)
+    if capped < MIN_ENVS:
+        return None
+    return 1 << (capped.bit_length() - 1)  # largest power of two <= capped
 
 _cache: dict = {"containers": None, "ts": 0.0}
 
@@ -81,6 +101,22 @@ def gpu_mem_used() -> dict:
     return mem
 
 
+def gpu_mem_free() -> dict:
+    try:
+        res = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,memory.free", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout
+    except Exception:
+        return {}
+    free = {}
+    for line in res.splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) == 2 and parts[0].isdigit():
+            free[int(parts[0])] = int(parts[1])
+    return free
+
+
 def container_queue(name: str) -> str | None:
     """Queue stem of the run_queue.py running inside the container, or None.
     The `[r]` glob keeps grep from matching its own command line."""
@@ -99,20 +135,37 @@ def container_queue(name: str) -> str | None:
 
 def status() -> list[dict]:
     mem = gpu_mem_used()
+    mem_free = gpu_mem_free()
     rows = []
     for c in list_dev_containers():
         q = container_queue(c["name"])
         used = mem.get(c["gpu"])
-        free = q is None and used is not None and used < FREE_MEM_MIB
+        free_mib = mem_free.get(c["gpu"])
+        fit_envs = envs_for_free_vram(free_mib)
         rows.append({
             "container": c["name"], "gpu": c["gpu"],
-            "mem_used": used, "queue": q, "free": free,
+            "mem_used": used, "mem_free": free_mib, "queue": q,
+            # legacy boolean: GPU essentially idle and no queue here
+            "free": q is None and used is not None and used < FREE_MEM_MIB,
+            # VRAM-based eligibility: no cockpit queue here and enough free VRAM
+            "fit_envs": fit_envs if q is None else None,
         })
     return rows
 
 
 def pick_free(rows: list[dict]) -> dict | None:
     return next((r for r in rows if r["free"]), None)
+
+
+def pick_for_vram(rows: list[dict]) -> dict | None:
+    """Pick the eligible container with the most free VRAM, sizing num_envs to it.
+    Eligible = no cockpit queue already running there and enough free VRAM for
+    MIN_ENVS. Returns the row plus the chosen `num_envs`, or None if none fit."""
+    eligible = [r for r in rows if r.get("fit_envs")]
+    if not eligible:
+        return None
+    best = max(eligible, key=lambda r: r["mem_free"])
+    return {**best, "num_envs": best["fit_envs"]}
 
 
 def _exec_detached(name: str, inner_cmd: str):
@@ -133,6 +186,10 @@ def run_queue_in(name: str, gpu: int, run_queue_args: str, label: str) -> dict:
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     log_path = LAUNCH_LOG_DIR / f"{label}-{ts}-gpu{gpu}.log"
     envf = config.LAUNCH_ENV_FILE
+    # The sourced env file (config.LAUNCH_ENV_FILE, i.e. workspace/.cockpit.env)
+    # also carries MUJOCO_GL=egl / PYOPENGL_PLATFORM=egl, overriding the images'
+    # baked-in glx defaults so mujoco exposes its Renderer for headless wandb
+    # video logging (glx needs an X display the container lacks).
     inner = (
         f"cd {config.PLAYGROUND_ROOT} && exec > {log_path} 2>&1 && "
         f"{{ [ -f {envf} ] && set -a && . {envf} && set +a; }}; "

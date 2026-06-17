@@ -13,7 +13,7 @@ import pathlib
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -57,6 +57,25 @@ def run_detail(exp_name: str):
     if d is None:
         raise HTTPException(404, f"run {exp_name!r} not found")
     return d
+
+
+@app.get("/api/queues/{name}/runs/{idx}/log", response_class=PlainTextResponse)
+def run_log(name: str, idx: int):
+    """Raw training log for one queue run -- backup/debug view (opened in a tab)."""
+    txt = discovery.run_log_text(name, idx)
+    if txt is None:
+        raise HTTPException(404, f"no log for run {idx} in queue {name!r}")
+    return txt
+
+
+@app.get("/api/queues/{name}/log", response_class=PlainTextResponse)
+def queue_log(name: str):
+    """Raw orchestrator (run_queue.py) log for a queue-run -- the fallback view for
+    when the queue itself is failing. 404 if launched outside the cockpit."""
+    txt = discovery.queue_log_text(name)
+    if txt is None:
+        raise HTTPException(404, f"no orchestrator log for queue {name!r}")
+    return txt
 
 
 # --- control (launch / stop / resume) --------------------------------------

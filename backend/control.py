@@ -36,13 +36,17 @@ def launch(queue_stem: str, start_from: int | None = None) -> dict:
     yaml_path = config.QUEUES / f"{queue_stem}.yaml"
     if not yaml_path.exists():
         raise FileNotFoundError(f"no such queue: {queue_stem}.yaml")
-    target = containers.pick_free(containers.status())
+    target = containers.pick_for_vram(containers.status())
     if target is None:
-        raise Busy("no free GPU/container available")
-    args = f"--queue learning/queues/{queue_stem}.yaml --yes"
+        raise Busy("no GPU with enough free VRAM available")
+    num_envs = target["num_envs"]
+    args = f"--queue learning/queues/{queue_stem}.yaml --yes --num-envs {num_envs}"
     if start_from:
         args += f" --start-from {int(start_from)}"
-    return containers.run_queue_in(target["container"], target["gpu"], args, queue_stem)
+    res = containers.run_queue_in(target["container"], target["gpu"], args, queue_stem)
+    res["num_envs"] = num_envs
+    res["mem_free"] = target["mem_free"]
+    return res
 
 
 def resume(n: int, steps: int, source_dir: str | None = None) -> dict:

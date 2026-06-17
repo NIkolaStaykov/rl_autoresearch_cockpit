@@ -19,7 +19,7 @@ from typing import Any, Optional
 
 import yaml
 
-from . import config, contrasts, hypothesis, metrics, metrics_config, notes, playground, settings
+from . import config, containers, contrasts, hypothesis, metrics, metrics_config, notes, playground, settings
 
 _TS_RE = re.compile(r"-(\d{8})-(\d{6})$")
 
@@ -134,6 +134,66 @@ def _load_overrides_file(path: Optional[str]) -> dict:
         return yaml.safe_load(p.read_text()) or {}
     except yaml.YAMLError:
         return {}
+
+
+def run_log_text(queue_name: str, idx: int) -> Optional[str]:
+    """Raw tee'd training log for run `idx` of a queue (backup/debug view).
+    Returns None if the queue dir or the run log is missing."""
+    qdir = config.QUEUE_LOGS / queue_name
+    if not qdir.is_dir():
+        return None
+    matches = sorted(qdir.glob(f"run-{idx:02d}-*.log"))
+    if not matches:
+        return None
+    try:
+        return matches[0].read_text(errors="replace")
+    except OSError:
+        return None
+
+
+_LAUNCH_LOG_RE = re.compile(r"^(?P<stem>.+)-(?P<d>\d{8})-(?P<t>\d{6})-gpu\d+\.log$")
+
+
+def _launch_log_path(queue_name: str) -> Optional[pathlib.Path]:
+    """Orchestrator log for a cockpit-launched queue (run_queue.py stdout/stderr,
+    written by containers.run_queue_in). The launch timestamp differs from the
+    queue-dir timestamp, so among logs for this stem we pick the one launched
+    closest in time to the run. None if the queue was launched outside the cockpit.
+    """
+    log_dir = containers.LAUNCH_LOG_DIR
+    if not log_dir.is_dir():
+        return None
+    stem = _stem(queue_name)
+    cands = []
+    for p in log_dir.iterdir():
+        m = _LAUNCH_LOG_RE.match(p.name)
+        if m and m.group("stem") == stem:
+            try:
+                dt = datetime.datetime.strptime(m.group("d") + m.group("t"), "%Y%m%d%H%M%S")
+            except ValueError:
+                continue
+            cands.append((dt, p))
+    if not cands:
+        return None
+    started = _started_at(queue_name)
+    if started:
+        target = datetime.datetime.fromisoformat(started)
+        cands.sort(key=lambda c: abs((c[0] - target).total_seconds()))
+    else:
+        cands.sort(key=lambda c: c[0])  # fall back to the most recent launch
+    return cands[-1][1] if not started else cands[0][1]
+
+
+def queue_log_text(queue_name: str) -> Optional[str]:
+    """Raw orchestrator log for a queue-run (the 'why did the queue itself fail'
+    view). None if there is no cockpit launch log for it."""
+    p = _launch_log_path(queue_name)
+    if p is None:
+        return None
+    try:
+        return p.read_text(errors="replace")
+    except OSError:
+        return None
 
 
 def _running_exp_name(qdir: pathlib.Path, idx: int) -> Optional[str]:
@@ -312,6 +372,7 @@ def queue_detail(name: str, with_metrics: bool = True) -> Optional[dict]:
         "conclusion": notes.read(name),
         "total": len(idxs),
         "completed": completed,
+        "log_available": _launch_log_path(name) is not None,
         "runs": runs,
     }
 

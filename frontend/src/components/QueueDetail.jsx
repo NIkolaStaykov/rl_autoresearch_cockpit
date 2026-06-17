@@ -140,6 +140,7 @@ function Matrix({ d, flavor }) {
             <SortTh id="health" sort={sort} onSort={onSort}>health</SortTh>
             <SortTh id="steps" sort={sort} onSort={onSort}>steps</SortTh>
             <SortTh id="wall" sort={sort} onSort={onSort}>wall</SortTh>
+            <th>log</th>
           </tr>
         </thead>
         <tbody>
@@ -171,6 +172,18 @@ function Matrix({ d, flavor }) {
                 ) : fmtSteps(r.final_step)}
               </td>
               <td className="num faint">{fmtDuration(r.duration_s)}</td>
+              <td className="num">
+                <a
+                  className="mono faint"
+                  href={`/api/queues/${encodeURIComponent(d.id)}/runs/${r.idx}/log`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="open raw training log in a new tab"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  log
+                </a>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -206,6 +219,15 @@ export default function QueueDetail({ id }) {
           <div className="qmeta">
             {d.id.slice(d.stem.length + 1)} · {d.completed}/{d.total} runs
             {d.axes.length > 0 && <> · axes: {d.axes.map(axisLabel).join(' × ')}</>}
+            {d.log_available && (
+              <> · <a
+                className="queue-log-link"
+                href={`/api/queues/${encodeURIComponent(d.id)}/log`}
+                target="_blank"
+                rel="noreferrer"
+                title="orchestrator log — for when the queue itself is failing"
+              >queue log ↗</a></>
+            )}
           </div>
         </div>
         <StatusPill status={d.running ? 'running' : 'done'} />

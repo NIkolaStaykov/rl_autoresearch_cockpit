@@ -47,9 +47,18 @@ function QueueCard({ q }) {
   )
 }
 
+// Match a queue against a free-text query (case-insensitive, all terms must hit).
+// Searches the experiment name, the full run id (carries the timestamp) and status.
+function matchesQuery(q, terms) {
+  if (terms.length === 0) return true
+  const hay = `${q.stem} ${q.id} ${q.status}`.toLowerCase()
+  return terms.every((t) => hay.includes(t))
+}
+
 export default function Board() {
   const [queues, setQueues] = useState(null)
   const [error, setError] = useState(null)
+  const [query, setQuery] = useState('')
 
   const load = useCallback(
     () => api.queues().then(setQueues).catch(setError),
@@ -64,21 +73,46 @@ export default function Board() {
   if (error) return <><ControlBar onChanged={load} /><ErrorBox error={error} /></>
   if (!queues) return <><ControlBar onChanged={load} /><Loading what="queues" /></>
 
-  const running = queues.filter((q) => q.running)
-  const rest = queues.filter((q) => !q.running)
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const filtered = queues.filter((q) => matchesQuery(q, terms))
+  const running = filtered.filter((q) => q.running)
+  const rest = filtered.filter((q) => !q.running)
 
   return (
     <div>
       <ControlBar onChanged={load} />
+      {queues.length > 0 && (
+        <div className="board-search">
+          <input
+            className="txt search-input"
+            type="search"
+            placeholder="search experiments by name, timestamp, status…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {terms.length > 0 && (
+            <span className="search-count">{filtered.length} / {queues.length}</span>
+          )}
+        </div>
+      )}
       {queues.length === 0 && <div className="empty-state">no queue-runs found under logs/_queue</div>}
+      {queues.length > 0 && filtered.length === 0 && (
+        <div className="empty-state">no experiments match “{query.trim()}”</div>
+      )}
       {running.length > 0 && (
         <>
           <div className="section-title">running now</div>
           <div className="board">{running.map((q) => <QueueCard key={q.id} q={q} />)}</div>
         </>
       )}
-      <div className="section-title">{running.length ? 'history' : 'all experiments'}</div>
-      <div className="board">{rest.map((q) => <QueueCard key={q.id} q={q} />)}</div>
+      {rest.length > 0 && (
+        <>
+          <div className="section-title">{running.length ? 'history' : 'all experiments'}</div>
+          <div className="board">{rest.map((q) => <QueueCard key={q.id} q={q} />)}</div>
+        </>
+      )}
     </div>
   )
 }
