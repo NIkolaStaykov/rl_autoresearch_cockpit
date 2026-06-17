@@ -48,17 +48,77 @@ function QueueCard({ q }) {
 }
 
 // Match a queue against a free-text query (case-insensitive, all terms must hit).
-// Searches the experiment name, the full run id (carries the timestamp) and status.
+// Searches the experiment name, the full run id (carries the timestamp), the
+// inferred task/env and status.
 function matchesQuery(q, terms) {
   if (terms.length === 0) return true
-  const hay = `${q.stem} ${q.id} ${q.status}`.toLowerCase()
+  const hay = `${q.stem} ${q.id} ${q.env || ''} ${q.status}`.toLowerCase()
   return terms.every((t) => hay.includes(t))
+}
+
+const UNGROUPED = '— unknown task —'
+
+// Group queue-runs by their inferred task/env. Returns groups ordered so that
+// tasks with a live run float to the top, then by most-recent activity. Each
+// group's experiments are sorted newest-first (temporal order within a group).
+function groupByTask(queues) {
+  const byTask = new Map()
+  for (const q of queues) {
+    const key = q.env || UNGROUPED
+    if (!byTask.has(key)) byTask.set(key, [])
+    byTask.get(key).push(q)
+  }
+  const groups = []
+  for (const [task, items] of byTask) {
+    items.sort((a, b) => (b.last_activity || '').localeCompare(a.last_activity || ''))
+    groups.push({
+      task,
+      items,
+      running: items.filter((q) => q.running).length,
+      lastActivity: items[0]?.last_activity || '',
+    })
+  }
+  groups.sort((a, b) => {
+    if (!!b.running !== !!a.running) return (b.running ? 1 : 0) - (a.running ? 1 : 0)
+    return b.lastActivity.localeCompare(a.lastActivity)
+  })
+  return groups
+}
+
+function TaskGroup({ group, collapsed, onToggle }) {
+  const { task, items, running } = group
+  return (
+    <section className="task-group">
+      <button className="task-head" onClick={onToggle} aria-expanded={!collapsed}>
+        <span className={`task-caret ${collapsed ? 'is-collapsed' : ''}`}>▾</span>
+        <span className="task-name">{task}</span>
+        <span className="task-count">{items.length}</span>
+        {running > 0 && (
+          <span className="task-running"><span className="led" />{running} running</span>
+        )}
+      </button>
+      {!collapsed && (
+        <div className="board">{items.map((q) => <QueueCard key={q.id} q={q} />)}</div>
+      )}
+    </section>
+  )
+}
+
+const COLLAPSE_KEY = 'cockpit.collapsedTasks'
+
+function loadCollapsed() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY)) || [])
+  } catch {
+    return new Set()
+  }
 }
 
 export default function Board() {
   const [queues, setQueues] = useState(null)
   const [error, setError] = useState(null)
   const [query, setQuery] = useState('')
+  const [collapsed, setCollapsed] = useState(loadCollapsed)
 
   const load = useCallback(
     () => api.queues().then(setQueues).catch(setError),
@@ -70,13 +130,21 @@ export default function Board() {
     return () => clearInterval(t)
   }, [load])
 
+  const toggleTask = useCallback((task) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      next.has(task) ? next.delete(task) : next.add(task)
+      try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next])) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
+
   if (error) return <><ControlBar onChanged={load} /><ErrorBox error={error} /></>
   if (!queues) return <><ControlBar onChanged={load} /><Loading what="queues" /></>
 
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const filtered = queues.filter((q) => matchesQuery(q, terms))
-  const running = filtered.filter((q) => q.running)
-  const rest = filtered.filter((q) => !q.running)
+  const groups = groupByTask(filtered)
 
   return (
     <div>
@@ -86,7 +154,7 @@ export default function Board() {
           <input
             className="txt search-input"
             type="search"
-            placeholder="search experiments by name, timestamp, status…"
+            placeholder="search experiments by name, task, timestamp, status…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoComplete="off"
@@ -101,18 +169,16 @@ export default function Board() {
       {queues.length > 0 && filtered.length === 0 && (
         <div className="empty-state">no experiments match “{query.trim()}”</div>
       )}
-      {running.length > 0 && (
-        <>
-          <div className="section-title">running now</div>
-          <div className="board">{running.map((q) => <QueueCard key={q.id} q={q} />)}</div>
-        </>
-      )}
-      {rest.length > 0 && (
-        <>
-          <div className="section-title">{running.length ? 'history' : 'all experiments'}</div>
-          <div className="board">{rest.map((q) => <QueueCard key={q.id} q={q} />)}</div>
-        </>
-      )}
+      {groups.map((g) => (
+        <TaskGroup
+          key={g.task}
+          group={g}
+          // A task is collapsed only if the user collapsed it AND it has no live
+          // run — surfacing in-flight work always wins over a saved preference.
+          collapsed={collapsed.has(g.task) && g.running === 0}
+          onToggle={() => toggleTask(g.task)}
+        />
+      ))}
     </div>
   )
 }

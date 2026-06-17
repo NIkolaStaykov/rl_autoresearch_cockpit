@@ -10,6 +10,7 @@ Sources, all live-read every call (no DB):
 
 from __future__ import annotations
 
+import collections
 import datetime
 import json
 import pathlib
@@ -243,6 +244,26 @@ def _last_activity(qdir: pathlib.Path) -> Optional[str]:
     return datetime.datetime.fromtimestamp(max(mtimes)).isoformat()
 
 
+def _queue_env(status: list[dict], specs: dict[int, dict]) -> Optional[str]:
+    """The task/env this queue-run trains on, inferred from the data (never
+    hardcoded). Uses the most common env_name across recorded runs; for queues
+    that haven't produced any status yet, falls back to the planned spec's
+    env_name. Returns None when nothing names an env."""
+    names: list[str] = []
+    for s in status:
+        env = s.get("env_name") or (s.get("flags") or {}).get("env_name")
+        if env:
+            names.append(env)
+    if not names:
+        for spec in specs.values():
+            env = (spec.get("flags") or {}).get("env_name")
+            if env:
+                names.append(env)
+    if not names:
+        return None
+    return collections.Counter(names).most_common(1)[0][0]
+
+
 def _queue_card(qdir: pathlib.Path, active: set[str]) -> dict:
     name = qdir.name
     stem = _stem(name)
@@ -262,6 +283,7 @@ def _queue_card(qdir: pathlib.Path, active: set[str]) -> dict:
     return {
         "id": name,
         "stem": stem,
+        "env": _queue_env(status, specs),
         "started_at": _started_at(name),
         "last_activity": _last_activity(qdir),
         "total": total,
