@@ -147,12 +147,6 @@ button.btn:hover { background: var(--bg-3); border-color: #3c4658; }
   font-family: var(--mono); font-size: 11px; color: var(--txt-dim);
   background: var(--bg-3); border-radius: 20px; padding: 1px 8px;
 }
-.task-running {
-  display: inline-flex; align-items: center; gap: 6px; margin-left: auto;
-  font-family: var(--mono); font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.04em; color: var(--run);
-}
-.task-running .led { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.3s ease-in-out infinite; }
 
 /* --- queue detail --- */
 .qhead { display: flex; align-items: flex-start; gap: 16px; margin: 8px 0 4px; }

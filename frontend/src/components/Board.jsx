@@ -58,9 +58,8 @@ function matchesQuery(q, terms) {
 
 const UNGROUPED = '— unknown task —'
 
-// Group queue-runs by their inferred task/env. Returns groups ordered so that
-// tasks with a live run float to the top, then by most-recent activity. Each
-// group's experiments are sorted newest-first (temporal order within a group).
+// Group queue-runs by their inferred task/env, ordered by most-recent activity.
+// Each group's experiments are sorted newest-first (temporal order in a group).
 function groupByTask(queues) {
   const byTask = new Map()
   for (const q of queues) {
@@ -71,31 +70,20 @@ function groupByTask(queues) {
   const groups = []
   for (const [task, items] of byTask) {
     items.sort((a, b) => (b.last_activity || '').localeCompare(a.last_activity || ''))
-    groups.push({
-      task,
-      items,
-      running: items.filter((q) => q.running).length,
-      lastActivity: items[0]?.last_activity || '',
-    })
+    groups.push({ task, items, lastActivity: items[0]?.last_activity || '' })
   }
-  groups.sort((a, b) => {
-    if (!!b.running !== !!a.running) return (b.running ? 1 : 0) - (a.running ? 1 : 0)
-    return b.lastActivity.localeCompare(a.lastActivity)
-  })
+  groups.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity))
   return groups
 }
 
 function TaskGroup({ group, collapsed, onToggle }) {
-  const { task, items, running } = group
+  const { task, items } = group
   return (
     <section className="task-group">
       <button className="task-head" onClick={onToggle} aria-expanded={!collapsed}>
         <span className={`task-caret ${collapsed ? 'is-collapsed' : ''}`}>▾</span>
         <span className="task-name">{task}</span>
         <span className="task-count">{items.length}</span>
-        {running > 0 && (
-          <span className="task-running"><span className="led" />{running} running</span>
-        )}
       </button>
       {!collapsed && (
         <div className="board">{items.map((q) => <QueueCard key={q.id} q={q} />)}</div>
@@ -144,7 +132,12 @@ export default function Board() {
 
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const filtered = queues.filter((q) => matchesQuery(q, terms))
-  const groups = groupByTask(filtered)
+  // Running experiments get their own section up top; the per-task groups below
+  // hold only the rest, so every group is freely collapsible.
+  const running = filtered
+    .filter((q) => q.running)
+    .sort((a, b) => (b.last_activity || '').localeCompare(a.last_activity || ''))
+  const groups = groupByTask(filtered.filter((q) => !q.running))
 
   return (
     <div>
@@ -169,13 +162,17 @@ export default function Board() {
       {queues.length > 0 && filtered.length === 0 && (
         <div className="empty-state">no experiments match “{query.trim()}”</div>
       )}
+      {running.length > 0 && (
+        <>
+          <div className="section-title">running now</div>
+          <div className="board">{running.map((q) => <QueueCard key={q.id} q={q} />)}</div>
+        </>
+      )}
       {groups.map((g) => (
         <TaskGroup
           key={g.task}
           group={g}
-          // A task is collapsed only if the user collapsed it AND it has no live
-          // run — surfacing in-flight work always wins over a saved preference.
-          collapsed={collapsed.has(g.task) && g.running === 0}
+          collapsed={collapsed.has(g.task)}
           onToggle={() => toggleTask(g.task)}
         />
       ))}

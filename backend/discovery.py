@@ -244,11 +244,19 @@ def _last_activity(qdir: pathlib.Path) -> Optional[str]:
     return datetime.datetime.fromtimestamp(max(mtimes)).isoformat()
 
 
-def _queue_env(status: list[dict], specs: dict[int, dict]) -> Optional[str]:
+# Per-run artifacts are named run-<idx>-<EnvName>[-<suffix>].<ext> (e.g.
+# run-00-TesolloDownwardsRotateZ-sharp10-overrides.yaml). Env names are CamelCase
+# with no dashes, so the env is the token right after the run index.
+_ARTIFACT_ENV_RE = re.compile(r"^run-\d+-([A-Za-z0-9]+)")
+
+
+def _queue_env(qdir: pathlib.Path, status: list[dict], specs: dict[int, dict]) -> Optional[str]:
     """The task/env this queue-run trains on, inferred from the data (never
     hardcoded). Uses the most common env_name across recorded runs; for queues
     that haven't produced any status yet, falls back to the planned spec's
-    env_name. Returns None when nothing names an env."""
+    env_name, then to the env baked into the per-run artifact filenames (which
+    survive even when status.json is empty and the source YAML is gone). Returns
+    None when nothing names an env."""
     names: list[str] = []
     for s in status:
         env = s.get("env_name") or (s.get("flags") or {}).get("env_name")
@@ -259,6 +267,11 @@ def _queue_env(status: list[dict], specs: dict[int, dict]) -> Optional[str]:
             env = (spec.get("flags") or {}).get("env_name")
             if env:
                 names.append(env)
+    if not names:
+        for p in qdir.glob("run-*"):
+            m = _ARTIFACT_ENV_RE.match(p.name)
+            if m:
+                names.append(m.group(1))
     if not names:
         return None
     return collections.Counter(names).most_common(1)[0][0]
@@ -283,7 +296,7 @@ def _queue_card(qdir: pathlib.Path, active: set[str]) -> dict:
     return {
         "id": name,
         "stem": stem,
-        "env": _queue_env(status, specs),
+        "env": _queue_env(qdir, status, specs),
         "started_at": _started_at(name),
         "last_activity": _last_activity(qdir),
         "total": total,
