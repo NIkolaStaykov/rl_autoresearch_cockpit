@@ -137,6 +137,17 @@ def _load_overrides_file(path: Optional[str]) -> dict:
         return {}
 
 
+def _run_overrides_path(qdir: pathlib.Path, idx: int) -> Optional[pathlib.Path]:
+    """The per-run env-overrides artifact for run `idx` (the immutable record of
+    the values it actually trained with), excluding the separate
+    `-eval-overrides.yaml`. Lets us read a run's values straight from the logs,
+    independent of the mutable (possibly since-edited) queue YAML."""
+    for p in sorted(qdir.glob(f"run-{idx:02d}-*-overrides.yaml")):
+        if not p.name.endswith("-eval-overrides.yaml"):
+            return p
+    return None
+
+
 def run_log_text(queue_name: str, idx: int) -> Optional[str]:
     """Raw tee'd training log for run `idx` of a queue (backup/debug view).
     Returns None if the queue dir or the run log is missing."""
@@ -209,6 +220,56 @@ def _running_exp_name(qdir: pathlib.Path, idx: int) -> Optional[str]:
         if m:
             return m.group(1)
     return None
+
+
+_LOG_FLAG_RES = {
+    "env_name": re.compile(r'"env_name":\s*"([^"]+)"'),
+    "suffix": re.compile(r'"suffix":\s*"([^"]*)"'),
+}
+_LOG_TIMESTEPS_RE = re.compile(r'"num_timesteps":\s*(\d+)')
+
+
+def _flags_from_log(qdir: pathlib.Path, idx: int) -> dict:
+    """Recover the flags an in-flight run started with from its tee'd run log;
+    status.json (which carries `flags` for finished runs) isn't written until the
+    run ends. train_jax_ppo echoes its config near the top, so we read only the
+    head rather than the whole (potentially huge) log."""
+    for log in sorted(qdir.glob(f"run-{idx:02d}-*.log")):
+        try:
+            with open(log, errors="ignore") as f:
+                head = f.read(65536)
+        except OSError:
+            continue
+        flags: dict = {}
+        for key, rx in _LOG_FLAG_RES.items():
+            m = rx.search(head)
+            if m:
+                flags[key] = m.group(1)
+        m = _LOG_TIMESTEPS_RE.search(head)
+        if m:
+            flags["num_timesteps"] = int(m.group(1))
+        if flags:
+            return flags
+    return {}
+
+
+def _run_flags(st: Optional[dict], qdir: pathlib.Path, idx: int) -> dict:
+    """A run's flags, from the logs: status.json for finished runs, the tee'd
+    run log for the in-flight one."""
+    if st is not None:
+        return st.get("flags") or {}
+    return _flags_from_log(qdir, idx)
+
+
+def _log_axes(overrides_by_idx: dict[int, dict]) -> list[str]:
+    """Sweep axes inferred from the logs: the override keys whose value actually
+    differs across runs. A sweep varies exactly its axes and holds everything
+    else constant, so this recovers them without consulting the queue YAML."""
+    if len(overrides_by_idx) < 2:
+        return []
+    keys: set[str] = set().union(*(set(o) for o in overrides_by_idx.values()))
+    return [k for k in sorted(keys)
+            if len({repr(o.get(k)) for o in overrides_by_idx.values()}) > 1]
 
 
 def _duration_s(entry: dict) -> Optional[float]:
@@ -321,44 +382,52 @@ def queue_detail(name: str, with_metrics: bool = True) -> Optional[dict]:
     stem = _stem(name)
     raw = _raw_yaml(stem)
     status = _load_status(qdir)
-    specs = _expanded_specs(stem)
     active = active_queue_dirs()
     is_active = name in active
 
     status_by_idx = {s["idx"]: s for s in status}
     completed = len(status)
-    axes = _axes(raw)
 
-    # Effective success metric = the queue's hypothesis `metric` override if it
-    # names a known one, else the global default.
+    # The hypothesis/contrasts/doc and the success-metric override are the
+    # experiment's *intent* and live only in the queue YAML. What actually ran
+    # — the run list, each run's values, and the sweep axes — is read from the
+    # logs below, never re-derived from the (mutable, possibly since-edited)
+    # queue YAML.
     hyp = (raw or {}).get("hypothesis")
     global_default = settings.read()["success_metric"]
     success_id = metrics_config.resolve_success_id((hyp or {}).get("metric"), global_default)
 
-    idxs = sorted(set(specs) | set(status_by_idx))
+    # Run list = the runs the logs know about: every recorded run, plus the
+    # in-flight one (its artifacts land on disk before status.json is appended).
+    idxs = sorted(status_by_idx)
+    running_idx = None
+    if is_active and completed not in status_by_idx:
+        running_idx = completed
+        idxs.append(running_idx)
+
+    # Each run's overrides come from its logged artifact, not the queue YAML.
+    overrides_by_idx: dict[int, dict] = {}
+    for idx in idxs:
+        st = status_by_idx.get(idx)
+        path = st.get("overrides_file") if st is not None else _run_overrides_path(qdir, idx)
+        overrides_by_idx[idx] = _load_overrides_file(str(path)) if path else {}
+
+    axes = _log_axes(overrides_by_idx)
+
     runs = []
     for idx in idxs:
-        spec = specs.get(idx)
         st = status_by_idx.get(idx)
-
-        flags = (st or {}).get("flags") or (spec or {}).get("flags") or {}
-        overrides = {}
-        if spec is not None:
-            try:
-                overrides = playground.run_queue()._flatten(spec.get("env_overrides", {}))
-            except Exception:
-                overrides = {}
-        if not overrides and st is not None:
-            overrides = _load_overrides_file(st.get("overrides_file"))
+        overrides = overrides_by_idx.get(idx) or {}
+        flags = _run_flags(st, qdir, idx)
 
         if st is not None:
             run_status = "done" if st.get("result") == "ok" else "failed"
-        elif is_active and idx == completed:
+        elif idx == running_idx:
             run_status = "running"
         else:
             run_status = "pending"
 
-        params = {a: overrides.get(a) for a in axes} if axes else dict(overrides)
+        params = dict(overrides)
         exp_name = (st or {}).get("exp_name")
         if exp_name is None and run_status == "running":
             exp_name = _running_exp_name(qdir, idx)
