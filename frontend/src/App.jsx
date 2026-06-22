@@ -38,7 +38,7 @@ function AppInner() {
           <span className="sub">experiment monitor</span>
         </div>
         <div className="spacer" />
-        <ViewControls />
+        <ViewControls view={route.view} />
         <Crumbs route={route} />
       </div>
 
@@ -49,14 +49,16 @@ function AppInner() {
   )
 }
 
-function ViewControls() {
+function ViewControls({ view }) {
   const { flavor, setFlavor, settings, setSuccessMetric } = useView()
   return (
     <div className="viewctl">
-      <div className="seg-toggle" role="group" aria-label="train/eval">
-        <button className={flavor === 'eval' ? 'on' : ''} onClick={() => setFlavor('eval')}>eval</button>
-        <button className={flavor === 'train' ? 'on' : ''} onClick={() => setFlavor('train')}>train</button>
-      </div>
+      {view !== 'board' && (
+        <div className="seg-toggle" role="group" aria-label="train/eval">
+          <button className={flavor === 'eval' ? 'on' : ''} onClick={() => setFlavor('eval')}>eval</button>
+          <button className={flavor === 'train' ? 'on' : ''} onClick={() => setFlavor('train')}>train</button>
+        </div>
+      )}
       {settings && (
         <select className="metric-select" value={settings.success_metric}
                 onChange={(e) => setSuccessMetric(e.target.value)} title="success metric (global default)">

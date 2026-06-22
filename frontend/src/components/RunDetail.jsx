@@ -32,7 +32,7 @@ function Curve({ curve }) {
             labelFormatter={(s) => `step ${fmtSteps(s)}`}
             formatter={(v) => [fmtNum(v), 'reward']}
           />
-          <Line type="monotone" dataKey="reward" stroke="#5eb1ff" strokeWidth={2} dot={false} isAnimationActive={false} />
+          <Line type="monotone" dataKey="reward" stroke="#4ade80" strokeWidth={2} dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
