@@ -36,7 +36,9 @@ def launch(queue_stem: str, start_from: int | None = None) -> dict:
     yaml_path = config.QUEUES / f"{queue_stem}.yaml"
     if not yaml_path.exists():
         raise FileNotFoundError(f"no such queue: {queue_stem}.yaml")
-    target = containers.pick_for_vram(containers.status())
+    # Robust VRAM read (max free across a few samples) so a transient spike in
+    # another process can't undersize num_envs at launch.
+    target = containers.pick_for_vram(containers.status(vram_samples=4))
     if target is None:
         raise Busy("no GPU with enough free VRAM available")
     num_envs = target["num_envs"]

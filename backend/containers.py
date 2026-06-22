@@ -101,7 +101,7 @@ def gpu_mem_used() -> dict:
     return mem
 
 
-def gpu_mem_free() -> dict:
+def _gpu_mem_free_once() -> dict:
     try:
         res = subprocess.run(
             ["nvidia-smi", "--query-gpu=index,memory.free", "--format=csv,noheader,nounits"],
@@ -114,6 +114,20 @@ def gpu_mem_free() -> dict:
         parts = [p.strip() for p in line.split(",")]
         if len(parts) == 2 and parts[0].isdigit():
             free[int(parts[0])] = int(parts[1])
+    return free
+
+
+def gpu_mem_free(samples: int = 1, interval: float = 0.25) -> dict:
+    """Free VRAM per GPU index. With samples>1, take the MAX free seen across a few
+    quick reads: nvidia-smi is instantaneous and a transient allocation by another
+    process briefly depresses `free`, which would undersize num_envs. Max-free over a
+    short window rejects such blips and reflects the steady-state headroom. samples=1
+    (the default) keeps the frequently-polled dashboard fast."""
+    free = _gpu_mem_free_once()
+    for _ in range(max(0, samples - 1)):
+        time.sleep(interval)
+        for gpu, f in _gpu_mem_free_once().items():
+            free[gpu] = max(free.get(gpu, 0), f)
     return free
 
 
@@ -133,9 +147,9 @@ def container_queue(name: str) -> str | None:
     return m.group(1) if m else "(running)"
 
 
-def status() -> list[dict]:
+def status(vram_samples: int = 1) -> list[dict]:
     mem = gpu_mem_used()
-    mem_free = gpu_mem_free()
+    mem_free = gpu_mem_free(samples=vram_samples)
     rows = []
     for c in list_dev_containers():
         q = container_queue(c["name"])
