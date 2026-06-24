@@ -17,9 +17,12 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import claims, config, control, discovery, metrics, metrics_config, notes, settings
+from . import claims, config, control, discovery, metrics, notes, schedule
 
 app = FastAPI(title="Experiment Cockpit")
+
+# Background dispatcher: launches scheduled queues onto GPUs as they free up.
+schedule.start_dispatcher()
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,6 +81,17 @@ def queue_log(name: str):
     return txt
 
 
+@app.get("/api/queues/{name}/spec")
+def queue_spec(name: str):
+    """The queue YAML this queue-run actually executed (snapshotted into its log
+    dir at launch), so the experiment view shows the real spec rather than a
+    possibly-edited same-named file under learning/queues/."""
+    d = discovery.queue_spec(name)
+    if d is None:
+        raise HTTPException(404, f"no queue spec for {name!r}")
+    return d
+
+
 # --- control (launch / stop / resume) --------------------------------------
 
 class LaunchBody(BaseModel):
@@ -95,6 +109,17 @@ class StopBody(BaseModel):
     container: str | None = None
 
 
+class ScheduleBody(BaseModel):
+    queue: str
+    start_from: int | None = None
+    # Optional edited YAML to stage instead of copying the template verbatim.
+    content: str | None = None
+
+
+class ScheduleEditBody(BaseModel):
+    content: str
+
+
 class ConclusionBody(BaseModel):
     text: str
 
@@ -105,27 +130,18 @@ class SaveQueueBody(BaseModel):
     overwrite: bool = False
 
 
-class SettingsBody(BaseModel):
-    success_metric: str | None = None
-
-
-@app.get("/api/settings")
-def get_settings():
-    return {
-        **settings.read(),
-        "success_metrics": metrics_config.registry(),
-    }
-
-
-@app.put("/api/settings")
-def put_settings(body: SettingsBody):
-    patch = {k: v for k, v in body.model_dump().items() if v is not None}
-    return {**settings.write(patch), "success_metrics": metrics_config.registry()}
-
-
 @app.get("/api/queue_specs")
 def queue_specs():
     return discovery.list_queue_specs()
+
+
+@app.get("/api/queue_specs/{stem}")
+def queue_spec_content(stem: str):
+    """The live source YAML of a platform queue, for the scheduled-tab viewer."""
+    d = discovery.queue_spec_content(stem)
+    if d is None:
+        raise HTTPException(404, f"no queue spec {stem!r}")
+    return d
 
 
 @app.get("/api/claims")
@@ -163,6 +179,47 @@ def control_stop(body: StopBody | None = None):
         return control.stop(body.container if body else None)
     except control.NotRunning as e:
         raise HTTPException(409, str(e))
+
+
+# --- schedule (run later) ---------------------------------------------------
+
+@app.get("/api/schedule")
+def get_schedule():
+    return schedule.list_pending()
+
+
+@app.post("/api/schedule")
+def add_schedule(body: ScheduleBody):
+    try:
+        return schedule.add(body.queue, body.start_from, body.content)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/schedule/{entry_id}/spec")
+def schedule_spec(entry_id: str):
+    """The staged queue YAML of a pending entry, for the scheduled-tab editor."""
+    d = schedule.staged_content(entry_id)
+    if d is None:
+        raise HTTPException(404, f"no scheduled entry {entry_id!r}")
+    return d
+
+
+@app.put("/api/schedule/{entry_id}")
+def edit_schedule(entry_id: str, body: ScheduleEditBody):
+    """Rewrite a pending entry's staged queue copy (not the template)."""
+    if not schedule.update(entry_id, body.content):
+        raise HTTPException(404, f"no scheduled entry {entry_id!r}")
+    return {"updated": entry_id}
+
+
+@app.delete("/api/schedule/{entry_id}")
+def delete_schedule(entry_id: str):
+    if not schedule.remove(entry_id):
+        raise HTTPException(404, f"no scheduled entry {entry_id!r}")
+    return {"removed": entry_id}
 
 
 @app.put("/api/queues/{name}/conclusion")

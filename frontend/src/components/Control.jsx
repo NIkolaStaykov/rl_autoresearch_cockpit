@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import QueueEditor from './QueueEditor'
 
 function GpuChip({ row, onStop, stopping }) {
   if (row.queue) {
@@ -23,13 +24,14 @@ function GpuChip({ row, onStop, stopping }) {
   )
 }
 
-export function ControlBar({ onChanged }) {
+export function ControlBar({ onChanged, onStatus }) {
   const [status, setStatus] = useState(null)
   const [err, setErr] = useState(null)
-  const [showLaunch, setShowLaunch] = useState(false)
+  const [showSchedule, setShowSchedule] = useState(false)
   const [stopping, setStopping] = useState(null)
 
-  const refresh = () => api.controlStatus().then(setStatus).catch((e) => setErr(e.message))
+  const refresh = () =>
+    api.controlStatus().then((s) => { setStatus(s); onStatus?.(s) }).catch((e) => setErr(e.message))
   useEffect(() => {
     refresh()
     const t = setInterval(refresh, 5000)
@@ -45,7 +47,6 @@ export function ControlBar({ onChanged }) {
   }
 
   const rows = status?.containers || []
-  const anyFree = status?.any_free
   return (
     <div className="controlbar">
       <span className="lbl">GPUs</span>
@@ -53,14 +54,14 @@ export function ControlBar({ onChanged }) {
       {rows.map((r) => <GpuChip key={r.container} row={r} onStop={stop} stopping={stopping} />)}
       <span className="grow" />
       {err && <span className="act-error">{err}</span>}
-      <button className="btn primary sm" disabled={!anyFree} onClick={() => setShowLaunch(true)}
-              title={anyFree ? 'dispatch to a free GPU' : 'no free GPU'}>
-        ＋ Launch queue
+      <button className="btn primary sm" onClick={() => setShowSchedule(true)}
+              title="add a queue to the schedule; it launches when a GPU is free">
+        ＋ Schedule experiment
       </button>
-      {showLaunch && (
-        <LaunchModal
-          onClose={() => setShowLaunch(false)}
-          onLaunched={async () => { setShowLaunch(false); await refresh(); onChanged?.() }}
+      {showSchedule && (
+        <ScheduleModal
+          onClose={() => setShowSchedule(false)}
+          onScheduled={async () => { setShowSchedule(false); await refresh(); onChanged?.() }}
         />
       )}
     </div>
@@ -169,26 +170,31 @@ function PlanNextModal({ queueId, onClose }) {
   )
 }
 
-function LaunchModal({ onClose, onLaunched }) {
+export function ScheduleModal({ onClose, onScheduled }) {
   const [specs, setSpecs] = useState(null)
   const [startFrom, setStartFrom] = useState('')
   const [err, setErr] = useState(null)
-  const [launching, setLaunching] = useState(null)
+  const [adding, setAdding] = useState(null)
+  const [editing, setEditing] = useState(null)
 
   useEffect(() => { api.specs().then(setSpecs).catch((e) => setErr(e.message)) }, [])
 
-  const launch = async (stem) => {
-    if (!window.confirm(`Launch "${stem}"${startFrom ? ` from #${startFrom}` : ''}? This starts GPU training.`)) return
-    setLaunching(stem); setErr(null)
-    try { await api.launch(stem, startFrom ? Number(startFrom) : null); onLaunched() }
-    catch (e) { setErr(e.message); setLaunching(null) }
+  const start = startFrom ? Number(startFrom) : null
+
+  const schedule = async (stem) => {
+    setAdding(stem); setErr(null)
+    try { await api.addSchedule(stem, start); onScheduled() }
+    catch (e) { setErr(e.message); setAdding(null) }
   }
 
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <span className="close" onClick={onClose}>×</span>
-        <h3>Launch a queue</h3>
+        <h3>Schedule an experiment</h3>
+        <div className="faint" style={{ fontSize: 12, marginBottom: 12 }}>
+          Adds the queue to the schedule. It launches automatically as soon as a GPU is free.
+        </div>
         <div className="action-row" style={{ marginBottom: 12 }}>
           <span className="lbl">start from run #</span>
           <input className="num" type="number" min="0" placeholder="0" value={startFrom}
@@ -209,14 +215,30 @@ function LaunchModal({ onClose, onLaunched }) {
                   </div>
                   {s.summary && <div className="sm2" style={{ marginTop: 3, color: 'var(--txt-dim)' }}>{s.summary}</div>}
                 </div>
-                <button className="btn primary sm" disabled={launching} onClick={() => launch(s.stem)}>
-                  {launching === s.stem ? 'launching…' : 'Launch'}
+                <button className="btn sm" disabled={adding} onClick={() => setEditing(s.stem)}>
+                  Edit…
+                </button>
+                <button className="btn primary sm" disabled={adding} onClick={() => schedule(s.stem)}>
+                  {adding === s.stem ? 'scheduling…' : 'Schedule'}
                 </button>
               </div>
             ))}
           </div>
         )}
       </div>
+      {editing && (
+        <QueueEditor
+          title="Edit & schedule"
+          saveLabel="Schedule"
+          note="Edits a per-experiment copy staged in the logs — the learning/queues template is left untouched."
+          load={() => api.specContent(editing)}
+          onSave={async (content) => {
+            await api.addSchedule(editing, start, content)
+            onScheduled()
+          }}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   )
 }

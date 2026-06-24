@@ -24,9 +24,19 @@ export const api = {
     get(`/api/queues/${encodeURIComponent(id)}?with_metrics=${withMetrics}`),
   run: (exp) => get(`/api/runs/${encodeURIComponent(exp)}`),
 
-  // settings (success metric)
-  getSettings: () => get('/api/settings'),
-  putSettings: (patch) => send('PUT', '/api/settings', patch),
+  // the queue YAML a queue-run actually executed (snapshot in its log dir)
+  queueSpec: (id) => get(`/api/queues/${encodeURIComponent(id)}/spec`),
+  // the live source YAML of a platform queue (scheduled tab)
+  specContent: (stem) => get(`/api/queue_specs/${encodeURIComponent(stem)}`),
+
+  // schedule (run later — dispatched onto a GPU as one frees up)
+  schedule: () => get('/api/schedule'),
+  addSchedule: (queue, startFrom, content = null) =>
+    send('POST', '/api/schedule', { queue, start_from: startFrom, content }),
+  // the staged per-experiment queue copy of a pending entry (the ground truth)
+  scheduleSpec: (id) => get(`/api/schedule/${encodeURIComponent(id)}/spec`),
+  editSchedule: (id, content) => send('PUT', `/api/schedule/${encodeURIComponent(id)}`, { content }),
+  removeSchedule: (id) => send('DELETE', `/api/schedule/${encodeURIComponent(id)}`),
 
   // control
   specs: () => get('/api/queue_specs'),

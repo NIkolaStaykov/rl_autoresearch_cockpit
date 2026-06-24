@@ -20,7 +20,7 @@ from typing import Any, Optional
 
 import yaml
 
-from . import config, containers, contrasts, hypothesis, metrics, metrics_config, notes, playground, settings
+from . import config, containers, contrasts, hypothesis, metrics, metrics_config, notes, playground
 
 _TS_RE = re.compile(r"-(\d{8})-(\d{6})$")
 
@@ -208,6 +208,46 @@ def queue_log_text(queue_name: str) -> Optional[str]:
         return None
 
 
+def queue_spec(queue_name: str) -> Optional[dict]:
+    """The queue YAML this queue-run *actually executed*.
+
+    run_queue.py snapshots the source spec into the run's log dir as
+    `queue.yaml` before any run starts, so it is immune to later edits of the
+    file under learning/queues/. We read that snapshot — never a same-named file
+    from learning/queues/, which may have since been edited or replaced. Only
+    when no snapshot exists (queue-runs predating snapshotting, or launched by an
+    old run_queue.py) do we fall back to the live spec, flagged `snapshot:false`
+    so the UI can warn the bytes may differ from what ran. None if neither is
+    available."""
+    qdir = config.QUEUE_LOGS / queue_name
+    snap = qdir / "queue.yaml"
+    if snap.is_file():
+        try:
+            return {"stem": _stem(queue_name), "yaml": snap.read_text(errors="replace"), "snapshot": True}
+        except OSError:
+            pass
+    live = config.QUEUES / f"{_stem(queue_name)}.yaml"
+    if live.is_file():
+        try:
+            return {"stem": _stem(queue_name), "yaml": live.read_text(errors="replace"), "snapshot": False}
+        except OSError:
+            pass
+    return None
+
+
+def queue_spec_content(stem: str) -> Optional[dict]:
+    """The live source YAML of a platform queue (learning/queues/<stem>.yaml),
+    for the 'scheduled' tab. Correct to read live here: the queue hasn't run, so
+    the file *is* the current plan. None if it doesn't exist."""
+    path = config.QUEUES / f"{stem}.yaml"
+    if not path.is_file():
+        return None
+    try:
+        return {"stem": stem, "yaml": path.read_text(errors="replace")}
+    except OSError:
+        return None
+
+
 def _running_exp_name(qdir: pathlib.Path, idx: int) -> Optional[str]:
     """The in-flight run's exp name isn't in status.json yet; it's printed in the
     queue's tee'd run-<idx>-*.log as 'Experiment name: ...'."""
@@ -387,15 +427,15 @@ def queue_detail(name: str, with_metrics: bool = True) -> Optional[dict]:
 
     status_by_idx = {s["idx"]: s for s in status}
     completed = len(status)
+    # Planned run count from the source YAML — the denominator should be the
+    # whole queue, not just the runs that have finished/started so far.
+    specs = _expanded_specs(stem)
 
-    # The hypothesis/contrasts/doc and the success-metric override are the
-    # experiment's *intent* and live only in the queue YAML. What actually ran
-    # — the run list, each run's values, and the sweep axes — is read from the
-    # logs below, never re-derived from the (mutable, possibly since-edited)
-    # queue YAML.
+    # The hypothesis/contrasts/doc are the experiment's *intent* and live only in
+    # the queue YAML. What actually ran — the run list, each run's values, and the
+    # sweep axes — is read from the logs below, never re-derived from the
+    # (mutable, possibly since-edited) queue YAML.
     hyp = (raw or {}).get("hypothesis")
-    global_default = settings.read()["success_metric"]
-    success_id = metrics_config.resolve_success_id((hyp or {}).get("metric"), global_default)
 
     # Run list = the runs the logs know about: every recorded run, plus the
     # in-flight one (its artifacts land on disk before status.json is appended).
@@ -446,10 +486,10 @@ def queue_detail(name: str, with_metrics: bool = True) -> Optional[dict]:
         }
         if with_metrics and exp_name:
             try:
-                m = metrics.summarize(exp_name, success_id)
+                m = metrics.summarize(exp_name)
                 if m and "error" not in m:
                     row["reward"] = m["reward"]      # {eval, train}
-                    row["success"] = m["success"]    # {id,label,kind,eval,train}
+                    row["success"] = m["success"]    # {label,kind,eval,train}
                     row["n_evals"] = m.get("n_evals")
                     row["final_step"] = m.get("final_step")
                     row["divergence"] = m.get("divergence")
@@ -461,7 +501,6 @@ def queue_detail(name: str, with_metrics: bool = True) -> Optional[dict]:
                 pass
         runs.append(row)
 
-    sm = metrics_config.SUCCESS_METRICS[success_id]
     return {
         "id": name,
         "stem": stem,
@@ -471,10 +510,10 @@ def queue_detail(name: str, with_metrics: bool = True) -> Optional[dict]:
         "hypothesis": hyp,
         "verdict": hypothesis.evaluate(hyp, runs),
         "contrasts": contrasts.evaluate((raw or {}).get("contrasts"), runs),
-        "success_metric": {"id": success_id, "label": sm["label"], "kind": sm["kind"]},
+        "success_metric": {"label": metrics_config.SUCCESS["label"], "kind": metrics_config.SUCCESS["kind"]},
         "doc": _doc_comment(stem),
         "conclusion": notes.read(name),
-        "total": len(idxs),
+        "total": max(len(specs), len(idxs)),
         "completed": completed,
         "log_available": _launch_log_path(name) is not None,
         "runs": runs,
@@ -486,7 +525,8 @@ def queue_detail(name: str, with_metrics: bool = True) -> Optional[dict]:
 # --------------------------------------------------------------------------
 
 def list_queue_specs() -> list[dict]:
-    """Every queue YAML available to launch, with a run count + summary."""
+    """Every queue YAML available to schedule, with a run count + summary. Used
+    to populate the 'Schedule a queue' picker."""
     if not config.QUEUES.is_dir():
         return []
     out = []

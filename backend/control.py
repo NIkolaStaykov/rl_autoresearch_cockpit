@@ -32,17 +32,26 @@ def status() -> dict:
     }
 
 
-def launch(queue_stem: str, start_from: int | None = None) -> dict:
-    yaml_path = config.QUEUES / f"{queue_stem}.yaml"
+def launch(
+    queue_stem: str,
+    start_from: int | None = None,
+    queue_path: str | None = None,
+) -> dict:
+    # `queue_path` is a repo-relative YAML to run (e.g. a scheduled experiment's
+    # staged copy under logs/_scheduled); it defaults to the learning/queues
+    # template for the stem. Either way run_queue.py reads it with the dev
+    # container's cwd at the playground root, so the path stays repo-relative.
+    rel = queue_path or f"learning/queues/{queue_stem}.yaml"
+    yaml_path = config.PLAYGROUND_ROOT / rel
     if not yaml_path.exists():
-        raise FileNotFoundError(f"no such queue: {queue_stem}.yaml")
+        raise FileNotFoundError(f"no such queue: {rel}")
     # Robust VRAM read (max free across a few samples) so a transient spike in
     # another process can't undersize num_envs at launch.
     target = containers.pick_for_vram(containers.status(vram_samples=4))
     if target is None:
         raise Busy("no GPU with enough free VRAM available")
     num_envs = target["num_envs"]
-    args = f"--queue learning/queues/{queue_stem}.yaml --yes --num-envs {num_envs}"
+    args = f"--queue {rel} --yes --num-envs {num_envs}"
     if start_from:
         args += f" --start-from {int(start_from)}"
     res = containers.run_queue_in(target["container"], target["gpu"], args, queue_stem)

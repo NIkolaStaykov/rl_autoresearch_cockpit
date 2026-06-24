@@ -82,9 +82,9 @@ def divergence(d: dict) -> dict:
     }
 
 
-def summarize(exp_name: str, success_metric: str = metrics_config.DEFAULT_SUCCESS_METRIC) -> Optional[dict]:
+def summarize(exp_name: str) -> Optional[dict]:
     """Compact summary for a single run. `reward` and `success` each carry both
-    an eval and a train value; `success` is the chosen success-metric."""
+    an eval and a train value; `success` is the held-success % indicator."""
     ar = playground.analyze_run()
     log_run = ar.resolve(exp_name)
     if log_run is None:
@@ -100,8 +100,8 @@ def summarize(exp_name: str, success_metric: str = metrics_config.DEFAULT_SUCCES
         "n_evals": d.get("n_evals"),
         "final_step": d.get("final_step"),
         "curve": d.get("curve") or [],
-        "reward": metrics_config.reward_values(raw),          # {eval, train}
-        "success": metrics_config.success_values(raw, success_metric),  # {id,label,kind,eval,train}
+        "reward": metrics_config.reward_values(raw),       # {eval, train}
+        "success": metrics_config.success_values(raw),     # {label,kind,eval,train}
         "training": _training_metrics(d),
         "divergence": divergence(d),
     }
@@ -109,7 +109,7 @@ def summarize(exp_name: str, success_metric: str = metrics_config.DEFAULT_SUCCES
 
 def detail(exp_name: str) -> Optional[dict]:
     """Full analyze_run dict for the drill-in view (adds env_config, reward
-    breakdown, checkpoint config), plus eval/train reward + every success metric."""
+    breakdown, checkpoint config), plus eval/train reward + the success %."""
     ar = playground.analyze_run()
     log_run = ar.resolve(exp_name)
     if log_run is None:
@@ -121,7 +121,7 @@ def detail(exp_name: str) -> Optional[dict]:
             **d,
             "indicators": {
                 "reward": metrics_config.reward_values(raw),
-                "success_metrics": metrics_config.all_success_values(raw),
+                "success": metrics_config.success_values(raw),
             },
             "divergence": divergence(d),
         }

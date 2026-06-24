@@ -21,6 +21,13 @@ WANDB = PLAYGROUND_ROOT / "wandb"
 QUEUES = PLAYGROUND_ROOT / "learning" / "queues"
 QUEUE_LOGS = LOGS / "_queue"
 
+# Per-experiment editable copies of scheduled queues. Each scheduled entry gets
+# its own copy here (logs/_scheduled/<entry_id>/<stem>.yaml) so it can be edited
+# without touching the learning/queues template, and so the file is bind-mounted
+# into the dev containers where run_queue.py launches it. It's the ground truth
+# for that specific scheduled experiment.
+QUEUE_STAGE = LOGS / "_scheduled"
+
 # Where the playground's helper scripts live, so we can import them.
 LEARNING_DIR = PLAYGROUND_ROOT / "learning"
 CLAUDE_DIR = PLAYGROUND_ROOT / ".claude"

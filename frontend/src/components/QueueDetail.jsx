@@ -4,6 +4,7 @@ import { fmtNum, fmtByKind, fmtDuration, fmtSteps, axisLabel } from '../format'
 import { StatusPill, Loading, ErrorBox, navigate } from './Common'
 import Verdict from './Verdict'
 import { QueueActions } from './Control'
+import SpecModal from './SpecModal'
 import { useView } from '../view'
 
 function DivBadge({ div }) {
@@ -136,7 +137,7 @@ function Matrix({ d, flavor }) {
             ))}
             {axes.length === 0 && <SortTh id="suffix" sort={sort} onSort={onSort}>suffix</SortTh>}
             <SortTh id="reward" sort={sort} onSort={onSort}>reward<span className="th-flavor"> {flavor}</span></SortTh>
-            <SortTh id="success" sort={sort} onSort={onSort} title={`success metric: ${sm.id || sm.label} (${flavor})`}>{sm.label}<span className="th-flavor"> {flavor}</span></SortTh>
+            <SortTh id="success" sort={sort} onSort={onSort} title={`success metric: held-success % (${flavor})`}>{sm.label}<span className="th-flavor"> {flavor}</span></SortTh>
             <SortTh id="health" sort={sort} onSort={onSort}>health</SortTh>
             <SortTh id="steps" sort={sort} onSort={onSort}>steps</SortTh>
             <SortTh id="wall" sort={sort} onSort={onSort}>wall</SortTh>
@@ -195,11 +196,12 @@ function Matrix({ d, flavor }) {
 export default function QueueDetail({ id }) {
   const [d, setD] = useState(null)
   const [error, setError] = useState(null)
-  const { flavor, nonce } = useView()
+  const [showSpec, setShowSpec] = useState(false)
+  const { flavor } = useView()
 
   const reload = useCallback(
     () => api.queue(id).then(setD).catch(setError),
-    [id, nonce],
+    [id],
   )
   useEffect(() => {
     setD(null); setError(null)
@@ -219,6 +221,9 @@ export default function QueueDetail({ id }) {
           <div className="qmeta">
             {d.id.slice(d.stem.length + 1)} · {d.completed}/{d.total} runs
             {d.axes.length > 0 && <> · axes: {d.axes.map(axisLabel).join(' × ')}</>}
+            {' · '}
+            <button className="link-btn" onClick={() => setShowSpec(true)}
+                    title="view the exact queue YAML this experiment ran">view queue</button>
             {d.log_available && (
               <> · <a
                 className="queue-log-link"
@@ -242,6 +247,14 @@ export default function QueueDetail({ id }) {
       <Matrix d={d} flavor={flavor} />
 
       <QueueActions queue={d} onChanged={reload} />
+
+      {showSpec && (
+        <SpecModal
+          title="queue spec"
+          load={() => api.queueSpec(id)}
+          onClose={() => setShowSpec(false)}
+        />
+      )}
     </div>
   )
 }

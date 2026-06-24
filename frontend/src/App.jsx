@@ -50,23 +50,14 @@ function AppInner() {
 }
 
 function ViewControls({ view }) {
-  const { flavor, setFlavor, settings, setSuccessMetric } = useView()
+  const { flavor, setFlavor } = useView()
+  if (view === 'board') return null
   return (
     <div className="viewctl">
-      {view !== 'board' && (
-        <div className="seg-toggle" role="group" aria-label="train/eval">
-          <button className={flavor === 'eval' ? 'on' : ''} onClick={() => setFlavor('eval')}>eval</button>
-          <button className={flavor === 'train' ? 'on' : ''} onClick={() => setFlavor('train')}>train</button>
-        </div>
-      )}
-      {settings && (
-        <select className="metric-select" value={settings.success_metric}
-                onChange={(e) => setSuccessMetric(e.target.value)} title="success metric (global default)">
-          {settings.success_metrics.map((m) => (
-            <option key={m.id} value={m.id}>{m.label}</option>
-          ))}
-        </select>
-      )}
+      <div className="seg-toggle" role="group" aria-label="train/eval">
+        <button className={flavor === 'eval' ? 'on' : ''} onClick={() => setFlavor('eval')}>eval</button>
+        <button className={flavor === 'train' ? 'on' : ''} onClick={() => setFlavor('train')}>train</button>
+      </div>
     </div>
   )
 }

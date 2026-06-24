@@ -3,6 +3,7 @@ import { api } from '../api'
 import { fmtAgo, fmtEta } from '../format'
 import { StatusPill, Loading, ErrorBox, navigate } from './Common'
 import { ControlBar } from './Control'
+import Scheduled from './Scheduled'
 
 function ProgressBar({ q }) {
   const total = Math.max(q.total, 1)
@@ -102,11 +103,20 @@ function loadCollapsed() {
   }
 }
 
+const TAB_KEY = 'cockpit.boardTab'
+
 export default function Board() {
   const [queues, setQueues] = useState(null)
   const [error, setError] = useState(null)
   const [query, setQuery] = useState('')
   const [collapsed, setCollapsed] = useState(loadCollapsed)
+  const [tab, setTab] = useState(() => localStorage.getItem(TAB_KEY) || 'experiments')
+  const [anyFree, setAnyFree] = useState(false)
+
+  const selectTab = useCallback((t) => {
+    setTab(t)
+    try { localStorage.setItem(TAB_KEY, t) } catch { /* ignore */ }
+  }, [])
 
   const load = useCallback(
     () => api.queues().then(setQueues).catch(setError),
@@ -127,8 +137,30 @@ export default function Board() {
     })
   }, [])
 
-  if (error) return <><ControlBar onChanged={load} /><ErrorBox error={error} /></>
-  if (!queues) return <><ControlBar onChanged={load} /><Loading what="queues" /></>
+  return (
+    <div>
+      <ControlBar onChanged={load} onStatus={(s) => setAnyFree(!!s.any_free)} />
+      <div className="board-tabs" role="tablist">
+        <button role="tab" aria-selected={tab === 'experiments'}
+                className={tab === 'experiments' ? 'on' : ''} onClick={() => selectTab('experiments')}>
+          experiments
+        </button>
+        <button role="tab" aria-selected={tab === 'scheduled'}
+                className={tab === 'scheduled' ? 'on' : ''} onClick={() => selectTab('scheduled')}>
+          scheduled
+        </button>
+      </div>
+      {tab === 'experiments'
+        ? <Experiments queues={queues} error={error} query={query} setQuery={setQuery}
+                       collapsed={collapsed} toggleTask={toggleTask} />
+        : <Scheduled anyFree={anyFree} onChanged={load} />}
+    </div>
+  )
+}
+
+function Experiments({ queues, error, query, setQuery, collapsed, toggleTask }) {
+  if (error) return <ErrorBox error={error} />
+  if (!queues) return <Loading what="queues" />
 
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const filtered = queues.filter((q) => matchesQuery(q, terms))
@@ -140,8 +172,7 @@ export default function Board() {
   const groups = groupByTask(filtered.filter((q) => !q.running))
 
   return (
-    <div>
-      <ControlBar onChanged={load} />
+    <>
       {queues.length > 0 && (
         <div className="board-search">
           <input
@@ -176,6 +207,6 @@ export default function Board() {
           onToggle={() => toggleTask(g.task)}
         />
       ))}
-    </div>
+    </>
   )
 }

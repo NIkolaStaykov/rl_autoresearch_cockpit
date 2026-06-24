@@ -81,11 +81,37 @@ run.sh           build + serve on one port
 
 ### Control endpoints
 
-`GET /api/queue_specs`, `GET /api/control/status`, `POST /api/control/{launch,resume,stop}`,
+`GET /api/queue_specs`, `GET /api/queue_specs/{stem}` (live source YAML),
+`GET /api/control/status`, `POST /api/control/{launch,resume,stop}`,
+`GET|POST /api/schedule`, `DELETE /api/schedule/{id}`,
 `PUT /api/queues/{id}/conclusion`, `POST /api/queues/{id}/plan-next`, `POST /api/queue_specs/save`.
 Launch logs are tee'd to `state/launch_logs/`.
 
-### Reward / success indicator (configurable)
+### Schedule (run later)
+
+The board's **Schedule queue** button adds a queue to a persisted pending list
+(`state/schedule.json`) instead of requiring a free GPU up front. A background
+dispatcher thread (`backend/schedule.py`, ticking every few seconds) launches the
+head entry onto a GPU — sizing num_envs to free VRAM via `control.launch` — as
+soon as one frees up, so you can line up an overnight batch and walk away. This is
+the *plan* of what will run; it is the only mutable state the cockpit owns besides
+notes.
+
+The board has two tabs: **experiments** (executed queue-runs, grouped by task) and
+**scheduled** — the pending queue only (position, when enqueued, the *next* entry
+waiting for a GPU), each removable. It is deliberately *not* a log of what already
+ran; that stays in the experiments tab.
+
+### Queue-spec snapshot
+
+The experiment view's **view queue** button shows the **exact spec a run executed**,
+not a same-named file from `learning/queues/` that may have been edited since.
+`run_queue.py` snapshots its source queue into the run's log dir as
+`logs/_queue/<run>/queue.yaml` before any run starts; `GET /api/queues/{id}/spec`
+serves that snapshot. Runs predating the snapshot fall back to the live file,
+flagged `snapshot:false` so the UI warns the bytes may differ.
+
+### Reward / success indicator
 
 Reward and the success indicator each have a **train** and **eval** flavor
 (`episode/sum_reward` vs `eval/episode_reward`; `episode/reward/success_per_step`
@@ -93,13 +119,11 @@ vs `eval/episode_reward/success_per_step`). A global **eval ⇄ train toggle** i
 top bar switches the whole view; eval is the decision flavor (verdicts are computed
 on eval).
 
-The **success metric** — the quantity that decides whether a run worked — is a
-global default (top-bar dropdown, persisted in `state/settings.json`), with a
-per-queue override via the hypothesis `metric` field. Registry in
-`backend/metrics_config.py`: `success_per_step` (held-success %, default),
-`success_count` (held steps/ep), `consecutive_success_steps`. The per-step success
-marker is logged every step whether or not it feeds the reward, so success% sits
-alongside total reward as an independent indicator.
+The **success metric** — the quantity that decides whether a run worked — is fixed
+to **held-success %** (`success_per_step`, defined in `backend/metrics_config.py`):
+the fraction of eval steps that met the success marker. That marker is logged every
+step whether or not it feeds the reward, so success% sits alongside total reward as
+an independent indicator.
 
 ### The structured `hypothesis:` block
 

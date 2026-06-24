@@ -70,7 +70,7 @@ function Breakdown({ summary }) {
 export default function RunDetail({ exp }) {
   const [d, setD] = useState(null)
   const [error, setError] = useState(null)
-  const { flavor, settings } = useView()
+  const { flavor } = useView()
 
   useEffect(() => {
     let alive = true
@@ -97,8 +97,7 @@ export default function RunDetail({ exp }) {
   const div = d.divergence
   const ind = d.indicators || {}
   const reward = ind.reward?.[flavor]
-  const succId = settings?.success_metric || 'success_per_step'
-  const succ = ind.success_metrics?.[succId]
+  const succ = ind.success
   return (
     <div>
       <div className="qhead">
