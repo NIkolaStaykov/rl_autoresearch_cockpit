@@ -143,7 +143,11 @@ def container_queue(name: str) -> str | None:
         return None
     if "run_queue.py" not in out:
         return None
-    m = re.search(r"queues/(\S+?)\.yaml", out)
+    # The queue stem is the --queue YAML's filename, whatever directory it's in:
+    # learning/queues/<stem>.yaml for templates, logs/_scheduled/<id>/<stem>.yaml
+    # for edited scheduled copies. Match on the basename so both resolve to the
+    # stem (and the GPU chip shows the queue name, not a generic "(running)").
+    m = re.search(r"--queue\s+\S*?([^/\s]+)\.yaml", out)
     return m.group(1) if m else "(running)"
 
 
